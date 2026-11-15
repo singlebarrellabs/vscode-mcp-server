@@ -545,6 +545,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           BRANCH="ci/bump-v${{ steps.published.outputs.v }}"
+          VERSION="${{ steps.published.outputs.v }}"
+
+          # This step's PAT carries contents write only, so every pull-request
+          # operation is refused with "Resource not accessible by personal
+          # access token". A release must not go red for that: the version was
+          # already published, tagged and released, and the publish job resolves
+          # the next version from the marketplace list rather than from
+          # package.json. Each PR operation therefore warns instead of failing,
+          # and the warning says what to finish by hand. Issue #202.
+          warn() { echo "::warning title=Version sync PR::$*"; }
 
           # An older sync PR cannot merge while main has moved on: branch
           # protection wants an up-to-date branch, and the queued squash merge
@@ -553,11 +563,12 @@ jobs:
           for n in $(gh pr list --state open --limit 100 --json number,headRefName \
             --jq '.[] | select(.headRefName | startswith("ci/bump-v")) | .number'); do
             gh pr close "$n" --delete-branch \
-              --comment "Superseded by v${{ steps.published.outputs.v }}."
+              --comment "Superseded by v$VERSION." \
+              || warn "could not close superseded sync PR #$n"
           done
 
           git add package.json
-          git commit -m "chore: bump version to v${{ steps.published.outputs.v }}"
+          git commit -m "chore: bump version to v$VERSION"
           # Authenticate the push with the PAT, not the GITHUB_TOKEN that
           # checkout persisted: a bot-authored push leaves the sync PR's CI run
           # waiting for maintainer approval, so auto-merge never fires. The
@@ -566,15 +577,20 @@ jobs:
           git config --unset-all "http.https://github.com/.extraheader" || true
           git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_SYNC_PAT" | base64 | tr -d '\n')" \
             push origin "HEAD:$BRANCH"
-          PR_URL="$(gh pr create \
+
+          if ! CREATED="$(gh pr create \
             --base main \
             --head "$BRANCH" \
-            --title "chore: bump version to v${{ steps.published.outputs.v }}" \
-           --body "Automated version sync after marketplace publish to v${{ steps.published.outputs.v }}.")"
-           # --auto: merge once the required CI checks pass. Without it the
-           # merge fails immediately because checks are still pending.
-           gh pr merge "$PR_URL" --squash --delete-branch --auto
-           # The required CI checks can take longer than this publish job's
-           # timeout. Auto-merge is queued above; do not wait for the PR to
-           # merge or mark a successful publish run as failed.
-           echo "Version sync PR created and queued for auto-merge: $PR_URL"
+            --title "chore: bump version to v$VERSION" \
+            --body "Automated version sync after marketplace publish to v$VERSION." 2>&1)"; then
+            warn "GH_SYNC_PAT cannot open the version-sync PR: ${CREATED}. Branch ${BRANCH} is pushed; open the PR by hand. Issue #202."
+            exit 0
+          fi
+            # --auto: merge once the required CI checks pass. Without it the
+            # merge fails immediately because checks are still pending.
+            gh pr merge "$CREATED" --squash --delete-branch --auto \
+              || warn "created $CREATED but could not queue auto-merge; merge it by hand"
+            # The required CI checks can take longer than this publish job's
+            # timeout. Auto-merge is queued above; do not wait for the PR to
+            # merge or mark a successful publish run as failed.
+            echo "Version sync PR created and queued for auto-merge: $CREATED"
