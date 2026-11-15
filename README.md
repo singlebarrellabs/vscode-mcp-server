@@ -1,6 +1,6 @@
 # VS Code MCP Server
 
-[![CI](https://github.com/nabheet/vscode-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/nabheet/vscode-mcp-server/actions/workflows/ci.yml)
+[![CI](https://github.com/singlebarrellabs/vscode-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/singlebarrellabs/vscode-mcp-server/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Let AI agents read, write, debug, and execute commands in VS Code — just like a
@@ -31,7 +31,7 @@ hover, rename, diagnostics, completions, symbols, and code actions
 
 1. **Install the extension** from the
    [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nabheet.vscode-ide-mcp)
-   or install a `.vsix` from the [latest release](https://github.com/nabheet/vscode-mcp-server/releases).
+   or install a `.vsix` from the [latest release](https://github.com/singlebarrellabs/vscode-mcp-server/releases).
 
 2. **Reload VS Code** — the extension starts automatically on startup. The first window becomes the
    **leader** and listens on `http://127.0.0.1:9876`; additional windows on the same machine join as
