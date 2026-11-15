@@ -1185,13 +1185,10 @@ describe("cluster bootstrap", () => {
       expect(logs.filter((l) => l.includes("Promoted to leader"))).toHaveLength(0);
       expect(logs.some((l) => l.includes(`HTTP join on 127.0.0.1:${port} failed`))).toBe(true);
 
-      // And the next port was never bound for promotion.
-      const nextPortFree = await new Promise<boolean>((resolve) => {
-        const srv = http.createServer();
-        srv.once("error", () => resolve(false));
-        srv.listen(port + 1, "127.0.0.1", () => srv.close(() => resolve(true)));
-      });
-      expect(nextPortFree).toBe(true);
+      // And the next port was never touched. Assert it through the logs rather
+      // than by binding port + 1: test files run in parallel, so another worker
+      // can hold that port, which made the bind probe fail on a correct run.
+      expect(logs.some((l) => l.includes(`:${port + 1}`))).toBe(false);
     } finally {
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
