@@ -7,12 +7,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nabheet/vscode-mcp-server.git"
+    "url": "https://github.com/singlebarrellabs/vscode-mcp-server.git"
   },
   "bugs": {
-    "url": "https://github.com/nabheet/vscode-mcp-server/issues"
+    "url": "https://github.com/singlebarrellabs/vscode-mcp-server/issues"
   },
-  "homepage": "https://github.com/nabheet/vscode-mcp-server#readme",
+  "homepage": "https://github.com/singlebarrellabs/vscode-mcp-server#readme",
   "engines": {
     "vscode": "^1.140.0"
   },
@@ -114,5 +114,6 @@
     "katex": "^0.19.1",
     "re2js": "2.8.7",
     "minimatch": "^11.0.1"
-  }
+  },
+  "author": "Single Barrel Labs"
 }
