@@ -97,8 +97,10 @@ group to drain before escalating. Never call `proc.kill()` directly in e2e.
 ## Release flow
 
 Merging to `main` runs the release guard, publishes stable to the Marketplace
-with `vsce`, tags `vX.Y.Z`, and opens a version-sync PR. The guard publishes
-when anything changed since the last `v*` tag is shipping; `package-lock.json`,
-`.github/**` and version-only / inert-devDependency `package.json` changes are
-non-shipping. PRs also publish pre-releases on the `0.9.x` line. See
-`RELEASE.md` and `.github/workflows/ci.yml`.
+with `vsce`, and tags `vX.Y.Z`. The guard publishes when anything changed since
+the last `v*` tag is shipping; `package-lock.json`, `.github/**` and version-only
+/ inert-devDependency `package.json` changes are non-shipping. The published
+version is derived from the marketplace, **not** from `package.json`, and nothing
+commits the bump back — the tag is the record, so `package.json` drifts behind by
+design. PRs also publish pre-releases on the `0.9.x` line. See `RELEASE.md` and
+`.github/workflows/ci.yml`.
