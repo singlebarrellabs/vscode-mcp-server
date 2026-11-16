@@ -14,23 +14,24 @@ publishes, and manual `workflow_dispatch` always publishes.
 
 When it does publish, the workflow:
 
-1. Runs `vsce publish patch --no-git-tag-version` — vsce bumps the patch
-   version in `package.json` locally and publishes the VSIX to the
+1. Resolves the version to publish from the marketplace: one patch above
+   whichever of `package.json` or the newest published stable version is
+   higher. `package.json` is a floor, not the record — see below.
+2. Publishes that VSIX to the
    [Marketplace](https://marketplace.visualstudio.com/items?itemName=nabheet.vscode-ide-mcp).
    A failed publish is retried up to 3 times. PR pre-releases live on the
    separate `0.9.x` line, so this stable patch bump never collides with them.
-2. Reads the published version from `package.json`.
-3. Tags the commit `vX.Y.Z` and pushes the tag.
+3. Tags that commit `vX.Y.Z` and pushes the tag.
 4. Creates a GitHub Release with auto-generated notes (VSIX attached).
-5. Syncs the bumped `package.json` back to `main` via an auto-PR titled
-   `chore: bump version to vX.Y.Z`. The publish workflow has a job-level
-   guard that skips when the push is such a version sync-back (commit message
-   starts with `chore: bump version to v`), so the sync-back does not
-   re-trigger publishing (no loop). CI runs on the PR, and the workflow
-   enables auto-merge so it lands as soon as checks pass.
 
-`main` is branch-protected (PRs only), so the version sync-back uses the PR
-path. The `vX.Y.Z` tag is the canonical record of the published version.
+The `vX.Y.Z` tag and the GitHub Release are the canonical record of the
+published version. The workflow deliberately does **not** commit the bump back
+to `main`: `package.json` therefore drifts behind the marketplace, exactly as it
+does in the other Single Barrel Labs repositories, and is only ever read as a
+floor. Keeping it honest would cost a personal access token, a PR per release
+and one more thing that can fail after the release has already shipped — the
+previous design — and nothing reads the field: `vsce` receives the version as an
+argument, and installs and updates are driven by the marketplace.
 
 ## Pre-release (automatic per PR)
 
@@ -38,7 +39,7 @@ Every push to an open pull request publishes a unique pre-release to the
 Marketplace pre-release channel:
 
 - Runs after `build` and `test-e2e` pass, on same-repo, non-draft,
-  non-dependabot PRs. Version sync-back branches (`ci/bump-v*`) are skipped.
+  non-dependabot PRs.
 - Versions use the `0.9.<workflow-run>` line: the Marketplace only accepts
   plain `major.minor.patch` (no semver pre-release tags) and pre-release
   versions must differ from stable. `0.9.x` is always above the stable
@@ -47,5 +48,4 @@ Marketplace pre-release channel:
 - Re-running a workflow re-publishes the same version (deduplicated, safe).
 - The published version is commented on the PR.
 
-Pre-release publishes do NOT create tags, GitHub releases, or the version
-sync-back PR.
+Pre-release publishes do NOT create tags and do NOT touch `package.json`.

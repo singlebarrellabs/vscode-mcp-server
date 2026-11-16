@@ -177,8 +177,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor != 'dependabot[bot]' &&
-      !startsWith(github.event.pull_request.head.ref, 'ci/bump-v')
+      github.actor != 'dependabot[bot]'
     permissions:
       contents: read
       pull-requests: write
@@ -252,10 +251,11 @@ jobs:
   # later non-shipping push. The tag also survives force-pushes, where
   # `github.event.before` can be unreachable.
   #
-  # The `if:` below is kept as belt-and-braces: it still drops the version
-  # sync-back squash merge (message "chore: bump version to vX.Y.Z (#N)") at the
-  # job level, before a runner starts. workflow_dispatch always runs (head_commit
-  # is null) and short-circuits the step below.
+  # The `if:` below is kept as belt-and-braces: it still drops a push whose
+  # commit message looks like the retired version sync-back ("chore: bump
+  # version to vX.Y.Z (#N)") at the job level, before a runner starts.
+  # workflow_dispatch always runs (head_commit is null) and short-circuits the
+  # step below.
   publish:
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
@@ -282,8 +282,8 @@ jobs:
 
       # Implements the RELEASE RULE documented on the job above. Writes
       # changed=true|false to $GITHUB_OUTPUT; every later step is gated on it,
-      # so a non-shipping push produces no build, no publish, no tag, no
-      # Release, and no version-sync PR.
+      # so a non-shipping push produces no build, no publish, no tag and no
+      # Release.
       #
       # The baseline is the last RELEASE (newest v* tag), not this push's
       # `before`. A per-push baseline loses a release when a shipping push's
@@ -419,12 +419,13 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         timeout-minutes: 2
         run: |
-          # package.json can lag the marketplace while the version-sync PR is
-          # still open. `vsce publish patch` bumps from package.json, so a
-          # publish that lands first re-attempts a version that already exists
-          # and fails. Publish one patch above whichever side is higher,
-          # comparing only the local major.minor line so the 0.9.x pre-release
-          # builds never drag the stable line upwards.
+          # package.json is NOT kept in sync with what was published: nothing
+          # commits the bump back, so the repo copy drifts behind the
+          # marketplace and only ever acts as a floor. `vsce publish patch`
+          # would bump from that stale file and re-attempt a version that
+          # already exists, so publish one patch above whichever side is
+          # higher, comparing only the local major.minor line so the 0.9.x
+          # pre-release builds never drag the stable line upwards.
           local="$(jq -r .version package.json)"
           # Extension id from package.json, so the workflow does not repeat the
           # publisher name.
@@ -517,80 +518,3 @@ jobs:
           tag_name: v${{ steps.published.outputs.v }}
           generate_release_notes: true
           files: "*.vsix"
-
-      # Keep package.json version in sync with the marketplace. vsce bumps it
-      # locally before publishing but never commits it, so without this the
-      # repo copy goes stale and the NEXT release re-attempts the same version.
-      # main is branch-protected (PRs only), so sync back via an auto-PR.
-      # The PR title intentionally has NO [skip ci]: branch protection requires
-      # CI on the PR, and [skip ci] skips it, making the PR unmergeable. Loop
-      # prevention is handled by the job-level guard above, which matches the
-      # squash-merge commit message "chore: bump version to vX.Y.Z (#N)".
-      #
-      # IMPORTANT: this step must push with a PERSONAL ACCESS TOKEN, not
-      # GITHUB_TOKEN. Pushes made with GITHUB_TOKEN are attributed to
-      # github-actions[bot], and GitHub holds CI runs on PRs whose head was
-      # pushed by a bot for maintainer approval ("awaiting approval"). The
-      # required checks then never run, branch protection blocks the merge,
-      # and the sync PR hangs until a human approves the run. Pushing with a
-      # PAT (owner: nabheet) attributes the run to a real user, so CI runs
-      # immediately and the auto-merge queue completes on its own.
-      - name: Sync version back via auto-PR
-        if: steps.changes.outputs.changed == 'true'
-        timeout-minutes: 20
-        env:
-          GH_TOKEN: ${{ secrets.GH_SYNC_PAT }}
-          GH_SYNC_PAT: ${{ secrets.GH_SYNC_PAT }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          BRANCH="ci/bump-v${{ steps.published.outputs.v }}"
-          VERSION="${{ steps.published.outputs.v }}"
-
-          # This step's PAT carries contents write only, so every pull-request
-          # operation is refused with "Resource not accessible by personal
-          # access token". A release must not go red for that: the version was
-          # already published, tagged and released, and the publish job resolves
-          # the next version from the marketplace list rather than from
-          # package.json. Each PR operation therefore warns instead of failing,
-          # and the warning says what to finish by hand. Issue #202.
-          warn() { echo "::warning title=Version sync PR::$*"; }
-
-          # An older sync PR cannot merge while main has moved on: branch
-          # protection wants an up-to-date branch, and the queued squash merge
-          # does not update it. Close them so only the current version is
-          # proposed.
-          for n in $(gh pr list --state open --limit 100 --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("ci/bump-v")) | .number'); do
-            gh pr close "$n" --delete-branch \
-              --comment "Superseded by v$VERSION." \
-              || warn "could not close superseded sync PR #$n"
-          done
-
-          git add package.json
-          git commit -m "chore: bump version to v$VERSION"
-          # Authenticate the push with the PAT, not the GITHUB_TOKEN that
-          # checkout persisted: a bot-authored push leaves the sync PR's CI run
-          # waiting for maintainer approval, so auto-merge never fires. The
-          # persisted credential is a URL-scoped header, which git prefers over
-          # `-c`, so drop it first. The token goes in a header, not the URL.
-          git config --unset-all "http.https://github.com/.extraheader" || true
-          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_SYNC_PAT" | base64 | tr -d '\n')" \
-            push origin "HEAD:$BRANCH"
-
-          if ! CREATED="$(gh pr create \
-            --base main \
-            --head "$BRANCH" \
-            --title "chore: bump version to v$VERSION" \
-            --body "Automated version sync after marketplace publish to v$VERSION." 2>&1)"; then
-            warn "GH_SYNC_PAT cannot open the version-sync PR: ${CREATED}. Branch ${BRANCH} is pushed; open the PR by hand. Issue #202."
-            exit 0
-          fi
-            # --auto: merge once the required CI checks pass. Without it the
-            # merge fails immediately because checks are still pending.
-            gh pr merge "$CREATED" --squash --delete-branch --auto \
-              || warn "created $CREATED but could not queue auto-merge; merge it by hand"
-            # The required CI checks can take longer than this publish job's
-            # timeout. Auto-merge is queued above; do not wait for the PR to
-            # merge or mark a successful publish run as failed.
-            echo "Version sync PR created and queued for auto-merge: $CREATED"
